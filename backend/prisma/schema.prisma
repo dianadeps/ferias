@@ -1,0 +1,189 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTH & USERS
+// ============================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      UserRole @default(EMPLOYEE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee?
+  logs     Log[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+// ============================================
+// EMPLOYEES
+// ============================================
+
+model Employee {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Personal data
+  name            String
+  email           String   @unique
+  department      String
+  team            String
+  position        String
+  
+  // Vacation data
+  admissionDate   DateTime // Data de admissão
+  vacationDays    Int      @default(20) // Saldo inicial em dias
+  vacationBalance Int      @default(20) // Saldo restante
+  
+  // Acquisition period (Período Aquisitivo)
+  acquisitionEnd  DateTime // Data fim do período aquisitivo
+  
+  // Concession period (Período Concessivo) - 12 meses após acquisitionEnd
+  concessionEnd   DateTime // Data limite para gozo
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  vacationRequests VacationRequest[]
+  logs             Log[]
+
+  @@map("employees")
+}
+
+// ============================================
+// VACATION REQUESTS
+// ============================================
+
+model VacationRequest {
+  id              String   @id @default(cuid())
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  status          VacationStatus @default(PENDING) // PENDING, APPROVED, REJECTED
+  
+  // Request metadata
+  requestDate     DateTime @default(now())
+  requestedAt     DateTime // When was requested
+  
+  // Vacation data
+  totalDays       Int      // Total vacation days (including weekends)
+  businessDays    Int      // Business days
+  
+  // Fractionated vacation (até 3 períodos)
+  periods         VacationPeriod[]
+  
+  // Approval
+  approvedBy      String?  // Manager ID
+  approvedAt      DateTime?
+  rejectionReason String?
+  
+  // Employee confirmation
+  employeeConfirmed Boolean @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("vacation_requests")
+}
+
+enum VacationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model VacationPeriod {
+  id               String   @id @default(cuid())
+  vacationRequestId String
+  vacationRequest  VacationRequest @relation(fields: [vacationRequestId], references: [id], onDelete: Cascade)
+  
+  periodNumber     Int      // 1, 2 or 3
+  startDate        DateTime
+  endDate          DateTime
+  totalDays        Int      // Including weekends
+  businessDays     Int      // Excluding weekends
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("vacation_periods")
+}
+
+// ============================================
+// HOLIDAYS & EXCEPTIONS
+// ============================================
+
+model Holiday {
+  id       String   @id @default(cuid())
+  date     DateTime @unique
+  name     String   // Name: "Natal", "Ano Novo", etc
+  type     HolidayType // NATIONAL, STATE, MUNICIPAL
+  state    String?  // State code: "SP", "RJ", etc (null for national)
+  city     String?  // City code (null for national/state)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("holidays")
+}
+
+enum HolidayType {
+  NATIONAL
+  STATE
+  MUNICIPAL
+}
+
+// ============================================
+// TEAM VACATION LIMITS
+// ============================================
+
+model TeamVacationLimit {
+  id        String   @id @default(cuid())
+  team      String   @unique // Team name
+  maxPeople Int      @default(2) // Max people on vacation simultaneously
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("team_vacation_limits")
+}
+
+// ============================================
+// AUDIT & LOGS
+// ============================================
+
+model Log {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  employeeId  String?
+  employee    Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  
+  action      String   // CREATE, UPDATE, APPROVE, REJECT
+  resource    String   // EMPLOYEE, VACATION_REQUEST
+  resourceId  String   // ID of the resource
+  changes     String   // JSON string of changes
+  timestamp   DateTime @default(now())
+
+  @@map("logs")
+}
